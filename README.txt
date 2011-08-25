@@ -104,6 +104,9 @@ Standard Django settings
 
         See http://freetds.org/userguide/dsnless.htm for more information.
 
+    ``encoding``
+        The underlying database character encoding. Default: utf-8        
+
 ``django-pyodbc``-specific settings
 -----------------------------------
 
