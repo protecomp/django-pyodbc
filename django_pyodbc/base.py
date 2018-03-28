@@ -1,3 +1,45 @@
+# Copyright 2013-2017 Lionheart Software LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Copyright (c) 2008, django-pyodbc developers (see README.rst).
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification,
+# are permitted provided that the following conditions are met:
+#
+#     1. Redistributions of source code must retain the above copyright notice,
+#        this list of conditions and the following disclaimer.
+#
+#     2. Redistributions in binary form must reproduce the above copyright
+#        notice, this list of conditions and the following disclaimer in the
+#        documentation and/or other materials provided with the distribution.
+#
+#     3. Neither the name of django-sql-server nor the names of its contributors
+#        may be used to endorse or promote products derived from this software
+#        without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+# ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 """
 MS SQL Server database backend for Django.
 """
@@ -7,7 +49,17 @@ import re
 import sys
 import warnings
 
+from django import VERSION as DjangoVersion
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.db import utils
+from django.db.backends.signals import connection_created
+
+from django_pyodbc.client import DatabaseClient
+from django_pyodbc.compat import binary_type, text_type, timezone
+from django_pyodbc.creation import DatabaseCreation
+from django_pyodbc.introspection import DatabaseIntrospection
+from django_pyodbc.operations import DatabaseOperations
 
 try:
     import pyodbc as Database
@@ -22,31 +74,25 @@ pyodbc_ver = tuple(map(int, vlist))
 if pyodbc_ver < (2, 0, 38, 9999):
     raise ImproperlyConfigured("pyodbc 2.0.38 or newer is required; you have %s" % Database.version)
 
-from django.db import utils
-from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
-from django.db.backends.signals import connection_created
-from django.conf import settings
-from django import VERSION as DjangoVersion
-if DjangoVersion[:2] == (1, 7):
-    _DJANGO_VERSION = 17
-elif DjangoVersion[:2] == (1, 6):
-    _DJANGO_VERSION = 16
-elif DjangoVersion[:2] == (1, 5):
-    _DJANGO_VERSION = 15
-elif DjangoVersion[:2] == (1, 4):
-    _DJANGO_VERSION = 14
-elif DjangoVersion[:2] == (1, 3):
-    _DJANGO_VERSION = 13
-elif DjangoVersion[:2] == (1, 2):
-    _DJANGO_VERSION = 12
-else:
-    raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
+try:
+    from django.db.backends.base.base import BaseDatabaseWrapper
+    from django.db.backends.base.features import  BaseDatabaseFeatures
+    from django.db.backends.base.validation import BaseDatabaseValidation
+except ImportError:
+    # import location prior to Django 1.8
+    from django.db.backends import BaseDatabaseWrapper, BaseDatabaseFeatures, BaseDatabaseValidation
 
-from django_pyodbc.operations import DatabaseOperations
-from django_pyodbc.client import DatabaseClient
-from django_pyodbc.compat import binary_type, text_type, timezone
-from django_pyodbc.creation import DatabaseCreation
-from django_pyodbc.introspection import DatabaseIntrospection
+if DjangoVersion[:2] == (2, 0):
+    _DJANGO_VERSION = 20
+else:
+    if DjangoVersion[0] == 1:
+        raise ImproperlyConfigured("Django %d.%d " % DjangoVersion[:2] +
+            "is not supported on 2.+ versions of django-pyodbc.  Please look " +
+            "into the 1.x versions of django-pyodbc to see if your 1.x " +
+            "version of Django is supported by django-pyodbc")
+    else:
+        raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
+
 
 DatabaseError = Database.Error
 IntegrityError = Database.IntegrityError
@@ -62,7 +108,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     allow_sliced_subqueries = False
     supports_paramstyle_pyformat = False
 
-    #has_bulk_insert = False
+    has_bulk_insert = False
     # DateTimeField doesn't support timezones, only DateTimeOffsetField
     supports_timezones = False
     supports_sequence_reset = False
@@ -83,6 +129,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     unicode_results = False
     datefirst = 7
     Database = Database
+    limit_table_list = False
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -118,6 +165,17 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         # TODO: freetext, full-text contains...
     }
 
+    # In Django 1.8 data_types was moved from DatabaseCreation to DatabaseWrapper.
+    # See https://docs.djangoproject.com/en/1.10/releases/1.8/#database-backend-api
+    data_types = DatabaseCreation.data_types
+    features_class = DatabaseFeatures
+    ops_class = DatabaseOperations
+    client_class = DatabaseClient
+    creation_class = DatabaseCreation
+    introspection_class = DatabaseIntrospection
+    validation_class = BaseDatabaseValidation
+
+
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
 
@@ -130,6 +188,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.encoding = options.get('encoding', 'utf-8')
             self.driver_supports_utf8 = options.get('driver_supports_utf8', None)
             self.driver_needs_utf8 = options.get('driver_needs_utf8', None)
+            self.limit_table_list = options.get('limit_table_list', False)
 
             # make lookup operators to be collation-sensitive if needed
             self.collation = options.get('collation', None)
@@ -144,17 +203,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         self.test_create = self.settings_dict.get('TEST_CREATE', True)
 
-        if _DJANGO_VERSION >= 13:
-            self.features = DatabaseFeatures(self)
-        else:
-            self.features = DatabaseFeatures()
+        self.features = DatabaseFeatures(self)
         self.ops = DatabaseOperations(self)
         self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
         self.introspection = DatabaseIntrospection(self)
         self.validation = BaseDatabaseValidation(self)
-
         self.connection = None
+
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
@@ -243,6 +299,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 if port_str:
                     host_str += ';PORT=%s' % port_str
                 cstr_parts.append('SERVER=%s' % host_str)
+            elif self.ops.is_openedge:
+                if port_str:
+                    host_str += ';PortNumber=%s' % port_str
+                cstr_parts.append('HostName=%s' % host_str)
             else:
                 cstr_parts.append('SERVERNAME=%s' % host_str)
 
@@ -275,11 +335,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             options = settings_dict['OPTIONS']
             autocommit = options.get('autocommit', False)
             if self.unicode_results:
-                self.connection = Database.connect(connstr, \
-                        autocommit=autocommit, \
+                self.connection = Database.connect(connstr,
+                        autocommit=autocommit,
                         unicode_results='True')
             else:
-                self.connection = Database.connect(connstr, \
+                self.connection = Database.connect(connstr,
                         autocommit=autocommit)
             connection_created.send(sender=self.__class__, connection=self)
 
@@ -289,9 +349,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             # considered the first day of the week (to be consistent with the
             # Django convention for the 'week_day' Django lookup) if the user
             # hasn't told us otherwise
-            cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
+
+            if not self.ops.is_db2 and not self.ops.is_openedge:
+                # IBM's DB2 doesn't support this syntax and a suitable
+                # equivalent could not be found.
+                cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
             if self.ops.sql_server_ver < 2005:
                 self.creation.data_types['TextField'] = 'ntext'
+                self.data_types['TextField'] = 'ntext'
                 self.features.can_return_id_from_insert = False
 
             ms_sqlncli = re.compile('^((LIB)?SQLN?CLI|LIBMSODBCSQL)')
@@ -327,7 +392,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
                 self.driver_supports_utf8 = (self.drv_name == 'SQLSRV32.DLL'
                                              or ms_sqlncli.match(self.drv_name))
 
-        return CursorWrapper(cursor, self.driver_supports_utf8, self.encoding)
+        return CursorWrapper(cursor, self.driver_supports_utf8, self.encoding, self)
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
@@ -356,23 +421,26 @@ class CursorWrapper(object):
     A wrapper around the pyodbc's cursor that takes in account a) some pyodbc
     DB-API 2.0 implementation and b) some common ODBC driver particularities.
     """
-    def __init__(self, cursor, driver_supports_utf8, encoding=""):
+    def __init__(self, cursor, driver_supports_utf8, encoding="", db_wrpr=None):
         self.cursor = cursor
         self.driver_supports_utf8 = driver_supports_utf8
         self.last_sql = ''
         self.last_params = ()
         self.encoding = encoding
+        self.db_wrpr = db_wrpr
+
+    def close(self):
+        try:
+            self.cursor.close()
+        except Database.ProgrammingError:
+            pass
 
     def format_sql(self, sql, n_params=None):
-        if not self.driver_supports_utf8 and isinstance(sql, text_type):
-            # Older FreeTDS (and other ODBC drivers?) don't support Unicode yet, so
-            # we need to encode the SQL clause itself in utf-8
-            sql = sql.encode('utf-8')
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
         if n_params is not None:
             try:
                 sql = sql % tuple('?' * n_params)
-            except:
+            except Exception as e:
                 #Todo checkout whats happening here
                 pass
         else:
@@ -384,15 +452,10 @@ class CursorWrapper(object):
         fp = []
         for p in params:
             if isinstance(p, text_type):
-                if not self.driver_supports_utf8:
-                    # Older FreeTDS (and other ODBC drivers?) doesn't support Unicode
-                    # yet, so we need to encode parameters in utf-8
-                    fp.append(p.encode('utf-8'))
-                else:
-                    fp.append(p)
+                fp.append(p)
             elif isinstance(p, binary_type):
                 if not self.driver_supports_utf8:
-                    fp.append(p.decode(self.encoding).encode('utf-8'))
+                    fp.append(p.decode(self.encoding))
                 else:
                     fp.append(p)
             elif isinstance(p, type(True)):
@@ -477,6 +540,11 @@ class CursorWrapper(object):
     def __iter__(self):
         return iter(self.cursor)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        return False
 
     # # MS SQL Server doesn't support explicit savepoint commits; savepoints are
     # # implicitly committed with the transaction.

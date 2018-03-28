@@ -1,4 +1,55 @@
-from django.db.backends import BaseDatabaseIntrospection
+# Copyright 2013-2017 Lionheart Software LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Copyright (c) 2008, django-pyodbc developers (see README.rst).
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification,
+# are permitted provided that the following conditions are met:
+#
+#     1. Redistributions of source code must retain the above copyright notice,
+#        this list of conditions and the following disclaimer.
+#
+#     2. Redistributions in binary form must reproduce the above copyright
+#        notice, this list of conditions and the following disclaimer in the
+#        documentation and/or other materials provided with the distribution.
+#
+#     3. Neither the name of django-sql-server nor the names of its contributors
+#        may be used to endorse or promote products derived from this software
+#        without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+# ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+try:
+    from django.db.backends.base.introspection import BaseDatabaseIntrospection, TableInfo
+except ImportError:
+    # Import location prior to Django 1.8
+    from django.db.backends import BaseDatabaseIntrospection
+
+    row_to_table_info = lambda row: row[0]
+else:
+    row_to_table_info = lambda row: TableInfo(row[0].lower(), row[1])
+
 import pyodbc as Database
 
 SQL_AUTOFIELD = -777555
@@ -37,12 +88,13 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Returns a list of table names in the current database.
         """
         # TABLES: http://msdn2.microsoft.com/en-us/library/ms186224.aspx
+        # TODO: Believe the below queries should actually select `TABLE_NAME, TABLE_TYPE`
+        if cursor.db_wrpr.limit_table_list:
+            cursor.execute("SELECT TABLE_NAME, 't' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = 'dbo'")
+        else:
+            cursor.execute("SELECT TABLE_NAME, 't' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
 
-        cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")
-        return [row[0] for row in cursor.fetchall()]
-
-        # Or pyodbc specific:
-        #return [row[2] for row in cursor.tables(tableType='TABLE')]
+        return [row_to_table_info(row) for row in cursor.fetchall()]
 
     def _is_auto_field(self, cursor, table_name, column_name):
         """

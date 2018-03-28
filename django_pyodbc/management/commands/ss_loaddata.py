@@ -1,7 +1,52 @@
+# Copyright 2013-2017 Lionheart Software LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Copyright (c) 2008, django-pyodbc developers (see README.rst).
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification,
+# are permitted provided that the following conditions are met:
+#
+#     1. Redistributions of source code must retain the above copyright notice,
+#        this list of conditions and the following disclaimer.
+#
+#     2. Redistributions in binary form must reproduce the above copyright
+#        notice, this list of conditions and the following disclaimer in the
+#        documentation and/or other materials provided with the distribution.
+#
+#     3. Neither the name of django-sql-server nor the names of its contributors
+#        may be used to endorse or promote products derived from this software
+#        without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+# ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 """
 ss_loaddata management command, we need to keep close track of changes in
 django/core/management/commands/loaddata.py.
 """
+
+from __future__ import print_function
+
 import sys
 import os
 import gzip
@@ -109,7 +154,7 @@ class Command(BaseCommand):
 
             if formats:
                 if verbosity > 1:
-                    print "Loading '%s' fixtures..." % fixture_name
+                    print("Loading '%s' fixtures..." % fixture_name)
             else:
                 self.enable_forward_ref_checks(cursor)
                 sys.stderr.write(
@@ -126,7 +171,7 @@ class Command(BaseCommand):
 
             for fixture_dir in fixture_dirs:
                 if verbosity > 1:
-                    print "Checking %s for fixtures..." % humanize(fixture_dir)
+                    print("Checking %s for fixtures..." % humanize(fixture_dir))
 
                 label_found = False
                 for format in formats:
@@ -138,8 +183,8 @@ class Command(BaseCommand):
                             file_name = '.'.join([fixture_name, format])
 
                         if verbosity > 1:
-                            print "Trying %s for %s fixture '%s'..." % \
-                                (humanize(fixture_dir), file_name, fixture_name)
+                            print("Trying %s for %s fixture '%s'..." % \
+                                (humanize(fixture_dir), file_name, fixture_name))
                         full_path = os.path.join(fixture_dir, file_name)
                         open_method = compression_types[compression_format]
                         try:
@@ -147,8 +192,8 @@ class Command(BaseCommand):
                             if label_found:
                                 fixture.close()
                                 self.enable_forward_ref_checks(cursor)
-                                print self.style.ERROR("Multiple fixtures named '%s' in %s. Aborting." %
-                                    (fixture_name, humanize(fixture_dir)))
+                                print(self.style.ERROR("Multiple fixtures named '%s' in %s. Aborting." %
+                                    (fixture_name, humanize(fixture_dir))))
                                 transaction.rollback()
                                 transaction.leave_transaction_management()
                                 return
@@ -156,8 +201,8 @@ class Command(BaseCommand):
                                 fixture_count += 1
                                 objects_in_fixture = 0
                                 if verbosity > 0:
-                                    print "Installing %s fixture '%s' from %s." % \
-                                        (format, fixture_name, humanize(fixture_dir))
+                                    print("Installing %s fixture '%s' from %s." % \
+                                        (format, fixture_name, humanize(fixture_dir)))
                                 try:
                                     objects = serializers.deserialize(format, fixture)
                                     for obj in objects:
@@ -197,10 +242,10 @@ class Command(BaseCommand):
                                     transaction.leave_transaction_management()
                                     return
 
-                        except Exception, e:
+                        except Exception as e:
                             if verbosity > 1:
-                                print "No %s fixture '%s' in %s." % \
-                                    (format, fixture_name, humanize(fixture_dir))
+                                print("No %s fixture '%s' in %s." % \
+                                    (format, fixture_name, humanize(fixture_dir)))
 
         self.enable_forward_ref_checks(cursor)
 
@@ -210,7 +255,7 @@ class Command(BaseCommand):
             sequence_sql = connection.ops.sequence_reset_sql(self.style, models)
             if sequence_sql:
                 if verbosity > 1:
-                    print "Resetting sequences"
+                    print("Resetting sequences")
                 for line in sequence_sql:
                     cursor.execute(line)
 
@@ -220,10 +265,10 @@ class Command(BaseCommand):
 
         if object_count == 0:
             if verbosity > 1:
-                print "No fixtures found."
+                print("No fixtures found.")
         else:
             if verbosity > 0:
-                print "Installed %d object(s) from %d fixture(s)" % (object_count, fixture_count)
+                print("Installed %d object(s) from %d fixture(s)" % (object_count, fixture_count))
 
         # Close the DB connection. This is required as a workaround for an
         # edge case in MySQL: if the same connection is used to
