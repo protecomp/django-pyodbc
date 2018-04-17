@@ -266,11 +266,11 @@ class SQLCompiler(compiler.SQLCompiler):
                 tbl, col = x.rsplit('.', 1)
             else:
                 col = x
-            f.append('{0}.{1}'.format(inner_table_name, col.strip()))
+            f.append(u'{0}.{1}'.format(inner_table_name, col.strip()))
 
         # inject a subselect to get around OVER requiring ORDER BY to come from FROM
-        inner_select = '{fields} FROM ( SELECT {inner} ) AS {inner_as}'.format(
-            fields=', '.join(f),
+        inner_select = u'{fields} FROM ( SELECT {inner} ) AS {inner_as}'.format(
+            fields=u', '.join(f),
             inner=inner_select,
             inner_as=inner_table_name,
         )
@@ -324,7 +324,7 @@ class SQLCompiler(compiler.SQLCompiler):
                     right_sql_quote=self.connection.ops.right_sql_quote,
                 )
         else:
-            sql = "SELECT {outer}, {row_num_col} FROM ( SELECT ROW_NUMBER() OVER ( ORDER BY {order}) as {row_num_col}, {inner}) as QQQ where {where}".format(
+            sql = u"SELECT {outer}, {row_num_col} FROM ( SELECT ROW_NUMBER() OVER ( ORDER BY {order}) as {row_num_col}, {inner}) as QQQ where {where}".format(
                 outer=outer_fields,
                 order=order,
                 inner=inner_select,
